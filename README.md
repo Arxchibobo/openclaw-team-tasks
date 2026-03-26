@@ -1,72 +1,88 @@
-# Team Tasks — Multi-Agent Pipeline Coordination
+# openclaw-team-tasks
 
-A Python CLI tool for coordinating multi-agent development workflows through shared JSON task files. Designed for use with [OpenClaw](https://github.com/openclaw/openclaw) and AI agent orchestration systems.
+**Multi-agent pipeline coordination for OpenClaw — orchestrate dev teams across Linear, DAG, and Debate workflows.**
+
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
+![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
+## Overview
+
+`openclaw-team-tasks` is a standalone Python CLI tool that lets an orchestrating AI agent (the "AGI coordinator") manage multi-agent development workflows through shared JSON state files. It is designed as an [OpenClaw](https://github.com/openclaw/openclaw) skill and integrates with OpenClaw's `sessions_send` API to dispatch tasks to worker agents (e.g., `code-agent`, `test-agent`, `docs-agent`, `monitor-bot`).
+
+All state is stored locally as JSON — no server, no external dependencies, no pip install required.
 
 ## Features
 
 Three coordination modes for different workflows:
 
-| Mode | Description | Use Case |
+| Mode | Description | Best For |
 |------|-------------|----------|
 | **Linear** | Sequential pipeline with auto-advance | Bug fixes, simple features, step-by-step workflows |
-| **DAG** | Dependency graph with parallel dispatch | Large features, spec-driven dev, complex dependencies |
-| **Debate** | Multi-agent position + cross-review | Code reviews, architecture decisions, competing hypotheses |
+| **DAG** | Dependency graph with parallel dispatch | Large features, spec-driven dev, complex task graphs |
+| **Debate** | Multi-agent positions + cross-review + synthesis | Code reviews, architecture decisions, competing hypotheses |
+
+- **Zero dependencies** — pure Python 3.12+ stdlib
+- **JSON-backed state** — inspect, edit, or version-control task files directly
+- **Cycle detection** — DAG mode rejects circular dependencies on `add`
+- **Auto-unblock notifications** — completing a DAG task reports which downstream tasks are now ready
+- **`--json` output** — machine-readable output for programmatic dispatch loops
+- **Workspace tracking** — optional shared directory path threaded through all task contexts
 
 ## Requirements
 
-- Python 3.12+ (stdlib only, no external dependencies)
-- Data stored as JSON in `/home/ubuntu/clawd/data/team-tasks/` (override with `TEAM_TASKS_DIR` env var)
+- Python 3.12+
+- No external packages
 
 ## Installation
 
 ```bash
-# Clone the repo
-git clone https://github.com/win4r/team-tasks.git
+git clone https://github.com/Arxchibobo/openclaw-team-tasks.git
+cd openclaw-team-tasks
 
-# No pip install needed — it's a standalone script
-python3 team-tasks/scripts/task_manager.py --help
+# No pip install needed — run directly
+python3 scripts/task_manager.py --help
 ```
 
 For OpenClaw skill integration, copy to your skills directory:
+
 ```bash
-cp -r team-tasks/ /path/to/clawd/skills/team-tasks/
+cp -r openclaw-team-tasks/ /path/to/clawd/skills/team-tasks/
 ```
 
 ## Quick Start
 
 ### Mode A: Linear Pipeline
 
-A sequential pipeline where agents execute one after another in order.
+Agents execute sequentially; completing one stage auto-advances to the next.
 
 ```bash
 TM="python3 scripts/task_manager.py"
 
-# 1. Create project with pipeline order
+# Create project with pipeline order
 $TM init my-api -g "Build REST API with tests and docs" \
   -p "code-agent,test-agent,docs-agent,monitor-bot"
 
-# 2. Assign tasks to each stage
+# Assign a task to each stage
 $TM assign my-api code-agent "Implement Flask REST API: GET/POST/DELETE /items"
 $TM assign my-api test-agent "Write pytest tests, target 90%+ coverage"
 $TM assign my-api docs-agent "Write README with API docs and examples"
 $TM assign my-api monitor-bot "Security audit and deployment readiness check"
 
-# 3. Check what's next
+# Check what's next
 $TM next my-api
 # ▶️  Next stage: code-agent
 
-# 4. Dispatch → work → save result → mark done
+# Dispatch → work → save result → mark done
 $TM update my-api code-agent in-progress
-# ... agent does work ...
 $TM result my-api code-agent "Created app.py with 3 endpoints"
 $TM update my-api code-agent done
 # ▶️  Next: test-agent  (auto-advance!)
 
-# 5. Check progress anytime
 $TM status my-api
 ```
 
-**Output example:**
+**Status output:**
 ```
 📋 Project: my-api
 🎯 Goal: Build REST API with tests and docs
@@ -84,26 +100,26 @@ $TM status my-api
   Progress: [██░░] 2/4
 ```
 
+---
+
 ### Mode B: DAG (Dependency Graph)
 
-Tasks declare dependencies and run in parallel when deps are met.
+Tasks declare dependencies and are dispatched in parallel when their deps are satisfied.
 
 ```bash
 TM="python3 scripts/task_manager.py"
 
-# 1. Create DAG project
 $TM init my-feature -m dag -g "Build search feature with parallel workstreams"
 
-# 2. Add tasks with dependencies
-$TM add my-feature design     -a docs-agent  --desc "Write API spec"
-$TM add my-feature scaffold   -a code-agent  --desc "Create project skeleton"
-$TM add my-feature implement  -a code-agent  -d "design,scaffold" --desc "Implement API"
-$TM add my-feature write-tests -a test-agent -d "design"          --desc "Write test cases from spec"
-$TM add my-feature run-tests  -a test-agent  -d "implement,write-tests" --desc "Run all tests"
-$TM add my-feature write-docs -a docs-agent  -d "implement"             --desc "Write final docs"
-$TM add my-feature review     -a monitor-bot -d "run-tests,write-docs"  --desc "Final review"
+# Add tasks with dependencies
+$TM add my-feature design      -a docs-agent  --desc "Write API spec"
+$TM add my-feature scaffold    -a code-agent  --desc "Create project skeleton"
+$TM add my-feature implement   -a code-agent  -d "design,scaffold" --desc "Implement API"
+$TM add my-feature write-tests -a test-agent  -d "design"          --desc "Write test cases from spec"
+$TM add my-feature run-tests   -a test-agent  -d "implement,write-tests" --desc "Run all tests"
+$TM add my-feature write-docs  -a docs-agent  -d "implement"       --desc "Write final docs"
+$TM add my-feature review      -a monitor-bot -d "run-tests,write-docs"  --desc "Final review"
 
-# 3. Visualize the DAG
 $TM graph my-feature
 ```
 
@@ -124,29 +140,23 @@ $TM graph my-feature
 ```
 
 ```bash
-# 4. Get ready tasks (parallel dispatch!)
+# Get all tasks ready to dispatch simultaneously
 $TM ready my-feature
 # 🟢 Ready to dispatch (2 tasks):
 #   📌 design → agent: docs-agent
 #   📌 scaffold → agent: code-agent
 
-# 5. Dispatch both in parallel, then mark done
 $TM update my-feature design done
 # 🟢 Unblocked: write-tests  ← auto-detected!
-
-$TM update my-feature scaffold done
-# 🟢 Unblocked: implement
-
-# 6. Continue until all complete
-$TM ready my-feature  # Shows newly unblocked tasks
 ```
 
-**Key DAG features:**
-- `ready` returns ALL tasks whose deps are satisfied — dispatch them simultaneously
-- `ready --json` includes `depOutputs` — previous stage results to pass to agents
-- Automatic unblock notifications when a task completes
-- Cycle detection on `add` — rejects tasks that would create circular dependencies
+**Key DAG behaviors:**
+- `ready` returns all tasks whose dependencies are satisfied — dispatch them in parallel
+- `ready --json` includes `depOutputs` — previous stage results passed to the next agent
+- Cycle detection on `add` — circular dependencies are rejected immediately
 - Partial failure: unrelated branches continue; only downstream tasks block
+
+---
 
 ### Mode C: Debate (Multi-Agent Deliberation)
 
@@ -155,42 +165,31 @@ Send the same question to multiple agents, collect positions, cross-review, and 
 ```bash
 TM="python3 scripts/task_manager.py"
 
-# 1. Create debate project
 $TM init security-review --mode debate \
   -g "Review auth module for security vulnerabilities"
 
-# 2. Add debaters with roles/perspectives
+# Add debaters with roles
 $TM add-debater security-review code-agent  --role "security expert focused on injection attacks"
 $TM add-debater security-review test-agent  --role "QA engineer focused on edge cases"
 $TM add-debater security-review monitor-bot --role "ops engineer focused on deployment risks"
 
-# 3. Start initial round
+# Round 1: initial positions
 $TM round security-review start
-# 🗣️  Debate Round 1 (initial) started
-# Outputs dispatch prompts for each debater
-
-# 4. Collect initial positions
 $TM round security-review collect code-agent  "Found SQL injection in login()"
 $TM round security-review collect test-agent  "Missing input validation on email field"
 $TM round security-review collect monitor-bot "No rate limiting on auth endpoints"
-# ✅ Round 1 (initial) is complete.
-# ➡️  Next: round security-review cross-review
 
-# 5. Generate cross-review prompts
+# Round 2: cross-review
 $TM round security-review cross-review
-# 🔁 Each debater gets others' positions + review instructions
-
-# 6. Collect cross-reviews
 $TM round security-review collect code-agent  "Agree on validation. Rate limiting is critical."
 $TM round security-review collect test-agent  "SQL injection is most severe. Adding rate limit tests."
 $TM round security-review collect monitor-bot "Both findings valid. Recommending WAF as additional layer."
 
-# 7. Synthesize all positions
+# Synthesize all positions
 $TM round security-review synthesize
-# 🧾 Outputs all initial positions + cross-reviews for final synthesis
 ```
 
-**Debate workflow diagram:**
+**Debate workflow:**
 ```
 Question → [Agent A] → Position A ─┐
          → [Agent B] → Position B ─┤── Cross-Review ── Synthesis
@@ -199,12 +198,10 @@ Question → [Agent A] → Position A ─┐
 
 ## CLI Reference
 
-### All Commands
-
 | Command | Mode | Usage | Description |
 |---------|------|-------|-------------|
 | `init` | all | `init <project> -g "goal" [-m linear\|dag\|debate]` | Create project |
-| `add` | dag | `add <project> <task-id> -a <agent> -d <deps>` | Add task with deps |
+| `add` | dag | `add <project> <task-id> -a <agent> [-d <deps>] [--desc "..."]` | Add task with deps |
 | `add-debater` | debate | `add-debater <project> <agent-id> [-r "role"]` | Add debater |
 | `round` | debate | `round <project> start\|collect\|cross-review\|synthesize` | Debate actions |
 | `status` | all | `status <project> [--json]` | Show progress |
@@ -226,10 +223,10 @@ Question → [Agent A] → Position A ─┐
 | `pending` | ⬜ | Waiting for dispatch |
 | `in-progress` | 🔄 | Agent is working |
 | `done` | ✅ | Completed |
-| `failed` | ❌ | Failed (pipeline blocks downstream) |
+| `failed` | ❌ | Failed (blocks downstream tasks) |
 | `skipped` | ⏭️ | Intentionally skipped |
 
-### Init Options
+### `init` Options
 
 ```bash
 python3 scripts/task_manager.py init <project> \
@@ -237,78 +234,77 @@ python3 scripts/task_manager.py init <project> \
   --mode linear|dag|debate \
   --pipeline "agent1,agent2,agent3"  # linear only \
   --workspace "/path/to/shared/dir" \
-  --force  # overwrite existing
+  --force  # overwrite existing project
 ```
 
 ## Integration with OpenClaw
 
-This tool is designed as an [OpenClaw Skill](https://docs.openclaw.ai). The orchestrating agent (AGI) dispatches tasks to worker agents via `sessions_send` and tracks state through the CLI.
+This tool is designed as an OpenClaw skill. The orchestrating agent tracks all state via the CLI and dispatches work to named worker agents via `sessions_send`.
 
-**Dispatch loop (linear):**
+**Linear dispatch loop:**
 ```
 1. next <project> --json           → get next stage info
 2. update <project> <agent> in-progress
-3. sessions_send(agent, task)      → dispatch to agent
+3. sessions_send(agent, task)      → dispatch to worker agent
 4. Wait for agent reply
 5. result <project> <agent> "..."  → save output
 6. update <project> <agent> done   → auto-advances to next stage
 7. Repeat
 ```
 
-**Dispatch loop (DAG):**
+**DAG dispatch loop:**
 ```
-1. ready <project> --json          → get ALL dispatchable tasks
+1. ready <project> --json          → get all dispatchable tasks (with depOutputs)
 2. For each ready task (parallel):
    a. update <project> <task> in-progress
    b. sessions_send(agent, task + depOutputs)
-3. On reply: result → update done → check newly unblocked
+3. On reply: result → update done → check newly unblocked tasks
 4. Repeat until all tasks complete
 ```
 
 ## Common Pitfalls
 
-### ⚠️ Linear mode: Stage ID = agent name, NOT a number
-
+**Linear: stage ID is the agent name, not a number**
 ```bash
-# ❌ WRONG — "stage '1' not found"
+# ❌ Wrong
 python3 scripts/task_manager.py assign my-project 1 "Build API"
 
-# ✅ CORRECT
+# ✅ Correct
 python3 scripts/task_manager.py assign my-project code-agent "Build API"
 ```
 
-### ⚠️ DAG: Dependencies must exist before referencing
-
+**DAG: dependencies must be added before they can be referenced**
 ```bash
-# ❌ WRONG — "dependency 'design' not found"
+# ❌ Wrong — "dependency 'design' not found"
 $TM add my-project implement -a code-agent -d "design"
 
-# ✅ CORRECT — add deps first
+# ✅ Correct — add the dependency first
 $TM add my-project design -a docs-agent --desc "Write spec"
 $TM add my-project implement -a code-agent -d "design" --desc "Implement"
 ```
 
-### ⚠️ Debate: Cannot add debaters after rounds start
-
+**Debate: all debaters must be added before starting a round**
 ```bash
-# ❌ WRONG
+# ❌ Wrong — cannot add debaters after rounds start
 $TM round my-debate start
-$TM add-debater my-debate new-agent  # Error!
+$TM add-debater my-debate new-agent
 
-# ✅ CORRECT — add all debaters before starting
+# ✅ Correct
 $TM add-debater my-debate agent-a
 $TM add-debater my-debate agent-b
 $TM round my-debate start
 ```
 
-## Data Storage
+## Configuration
+
+### Data Directory
 
 Project files are stored as JSON at:
 ```
 /home/ubuntu/clawd/data/team-tasks/<project>.json
 ```
 
-Override with environment variable:
+Override with an environment variable:
 ```bash
 export TEAM_TASKS_DIR=/custom/path
 ```
@@ -316,15 +312,18 @@ export TEAM_TASKS_DIR=/custom/path
 ## Project Structure
 
 ```
-team-tasks/
-├── README.md              # This file
-├── SKILL.md               # OpenClaw skill definition
-├── SPEC.md                # Enhancement spec (debate + workspace)
+openclaw-team-tasks/
+├── README.md                         # This file
+├── SKILL.md                          # OpenClaw skill definition
+├── SPEC.md                           # Enhancement spec (debate + workspace)
 ├── scripts/
-│   └── task_manager.py    # Main CLI tool (Python 3.12+, stdlib only)
+│   └── task_manager.py               # Main CLI (Python 3.12+, stdlib only)
 └── docs/
-    ├── GAP_ANALYSIS.md    # Comparison with Claude Code Agent Teams
-    └── AGENT_TEAMS_OFFICIAL_DOCS.md  # Reference documentation
+    ├── GAP_ANALYSIS.md               # Comparison with Claude Code Agent Teams
+    ├── AGENT_TEAMS_OFFICIAL_DOCS.md  # Reference documentation
+    ├── three-modes-overview.svg
+    ├── dev-team-agents-detail.svg
+    └── debate-mode-flow.svg
 ```
 
 ## License
